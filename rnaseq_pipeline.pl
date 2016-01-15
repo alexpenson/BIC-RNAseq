@@ -46,7 +46,7 @@ GetOptions ('map=s' => \$map,
 if(!$map || !$pre || !$species || !$strand || $help){
     print <<HELP;
 
-    USAGE: rnaseq_pipeline.pl -map MAP -species SPECIES -strand STRAND -config CONFIG -pre PRE -samplekey SAMPLEKEY -comparisons COMPARISONS -scheduler SCHEDULER
+    USAGE: rnaseq_pipeline.pl -map MAP -species SPECIES -strand STRAND -pre PRE -samplekey SAMPLEKEY -comparisons COMPARISONS
 	* MAP: file listing sample mapping information for processing (REQUIRED)
 	* SPECIES: only human(hg19), mouse (mm9/mm10) and human-mouse hybrid (hybrid), fly(dm3), zebra fish(zv9) currently supported (REQUIRED)
 	* STRAND: library strand; valid options are none, forward, reverse (REQUIRED)
@@ -54,7 +54,7 @@ if(!$map || !$pre || !$species || !$strand || $help){
 	* SAMPLEKEY: tab-delimited file listing sampleName in column A and condition in column B (if -deseq, REQUIRED)
 	* COMPARISONS: tab-delimited file listing the conditions to compare in columns A/B (if -deseq, REQUIRED)
 	* R1ADAPTOR/R2ADAPTOR: if provided, will trim adaptor sequences; NOTE: if provided for only one end, will also assign it to the other end
-	* ALIGNERS SUPPORTED: star (-star), defaults to 2pass method unless -pass1 specified; tophat2 (-tophat); if no aligner specifed, will default to STAR
+	* ALIGNERS SUPPORTED: star (-star), defaults to 2pass method unless (-pass1) is specified; tophat2 (-tophat); if no aligner specifed, will default to STAR
 	* ANALYSES SUPPORTED: cufflinks (-cufflinks); htseq (-htseq); dexseq (-dexseq); deseq (-deseq; must specify samplekey and comparisons)
 	* FUSION DETECTION: supported fusion callers chimerascan (-chimerascan), star_fusion (-star_fusion), mapsplice (-mapsplice), defuse (-defuse), fusioncatcher (-fusioncatcher); -allfusions will run all supported fusion detection programs
 	* TRANSCRIPT ANALYSIS: enable transcript analysis using express and kallisto (-transcript)
