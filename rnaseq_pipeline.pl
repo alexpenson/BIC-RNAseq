@@ -5,14 +5,14 @@ use Getopt::Long qw(GetOptions);
 use FindBin qw($Bin); 
 use Cwd;
 use Cwd 'abs_path';
-my ($map, $pre, $config, $help, $species, $cufflinks, $dexseq, $htseq, $chimerascan, $samplekey, $comparisons, $deseq, $star_fusion, $mapsplice, $defuse, $fusioncatcher, $detectFusions, $allfusions, $tophat, $star, $pass1, $lncrna, $lincrna_BROAD, $output, $strand, $r1adaptor, $r2adaptor, $transcript, $no_replicates);
+my ($map, $pre, $config, $help, $species, $cufflinks, $dexseq, $htseq, $chimerascan, $samplekey, $comparisons, $deseq, $star_fusion, $mapsplice, $defuse, $fusioncatcher, $detectFusions, $allfusions, $tophat, $star, $pass1, $lncrna, $lincrna_BROAD, $output, $strand, $r1adaptor, $r2adaptor, $transcript, $no_replicates, $max_bpipe_job);
 
 
 my $bpipe_path = "";
 my $software_config_file = "$Bin/software_config.txt";
 my $annotation_config = "$Bin/annotation_config.groovy";
 $output = "results";
-
+$max_bpipe_job = 1000;
 
 GetOptions ('map=s' => \$map,
 	        'pre=s' => \$pre,
@@ -40,7 +40,8 @@ GetOptions ('map=s' => \$map,
 	        'r1adaptor=s' => \$r1adaptor,
 	        'r2adaptor=s' => \$r2adaptor,
             'lincrna_BROAD' => \$lincrna_BROAD,
-            'no_replicates' => \$no_replicates) or exit(1);
+            'no_replicates' => \$no_replicates,
+            'max_bpipe_job=i' => \$max_bpipe_job) or exit(1);
 
 
 if(!$map || !$pre || !$species || !$strand || $help){
@@ -60,6 +61,7 @@ if(!$map || !$pre || !$species || !$strand || $help){
 	* TRANSCRIPT ANALYSIS: enable transcript analysis using express and kallisto (-transcript)
 	* OUTPUT: output results directory (default: results)
 	* OPTIONS: lncRNA analysis (-lncrna) runs all analyses based on lncRNA GTF (hg19 only); 
+	* max_bpipe_job: use -max_bpipe_job <int> to change the maximum number of cluster jobs that the current bpipe job is allowed to run at the same time. Defualt to 1,000
 HELP
 exit;
 }
@@ -71,6 +73,7 @@ if($samplekey || $comparisons)
     $htseq = 1;
 }
 
+die "ERROR: -max_bpipe_job must >= 1\n" if($max_bpipe_job < 1);
 die "ERROR: Species must be hg19, mm9, mm10, hybrid, dm3, zv9\n" if($species !~ /hg19|mm9|mm10|hybrid|dm3|zv9/);
 die "ERROR: -samplekey and -comparisons file are needed for -deseq\n" if ($deseq && (!$samplekey || !$comparisons));
 die "ERROR: only human(hg19) support -lncrna\n" if($lncrna && $species !~/hg19/);
@@ -273,7 +276,7 @@ if($lncrna)
 
 chdir $output;
 
-`BPIPE_BACKGROUND=1 $bpipe_path/bin/bpipe run -p Bin=$Bin -p species=$species -p pre=$pre -p htseq_stranded=$htseq_stranded -p picard_strand_specificity=$picard_strand_specificity -p MAPPING_FILE=$map -p SOFTWARE_CONFIG_FILE=$software_config_file -p ANNOTATION_CONFIG_FILE=$annotation_config $extra_para rnaseq_pipeline.bpipe`;
+`BPIPE_BACKGROUND=1 $bpipe_path/bin/bpipe run -n $max_bpipe_job -p Bin=$Bin -p species=$species -p pre=$pre -p htseq_stranded=$htseq_stranded -p picard_strand_specificity=$picard_strand_specificity -p MAPPING_FILE=$map -p SOFTWARE_CONFIG_FILE=$software_config_file -p ANNOTATION_CONFIG_FILE=$annotation_config $extra_para rnaseq_pipeline.bpipe`;
 
 print "Start running RNA-seq bpipe workflow\n";
 
