@@ -487,7 +487,7 @@ runChimeraScan = {    // chimerascan does not support single end read
 }
 
 runStarFusion = {   // it doesn't matter if R2 list is empty
-    output.dir = "fusion/star/$branch.sample"
+    output.dir = "fusion/star_fusion/$branch.sample"
     def read_para = "--left_fq $branch.R1_fusion_read"
     if(branch.type == "PE")
     {
