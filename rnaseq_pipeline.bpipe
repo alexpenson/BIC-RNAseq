@@ -478,6 +478,8 @@ runChimeraScan = {    // chimerascan does not support single end read
     {
       produce("chimeras.bedpe")
       {
+        exec "rm -rf ${output.dir}/*", "run_remove_partial_file"
+
         exec "$SOFTWARE_PATH.PYTHON/python $SOFTWARE_PATH.CHIMERASCAN/chimerascan_run.py --bowtie-path=$SOFTWARE_PATH.BOWTIE -p 6 --quals solexa --multihits=10 --filter-false-pos=$Bin/data/hg19_bodymap_false_positive_chimeras.txt $ANNOTATION_PATH.CHIMERASCAN_INDEX $branch.R1_fusion_read $branch.R2_fusion_read $output.dir >$output.dir/chimerascan_${branch.sample}.blog 2>&1", "run_chimerascan"
       }
       sample_fusion_output[branch.sample] += " --chimerascan $output.bedpe"
@@ -493,6 +495,8 @@ runStarFusion = {   // it doesn't matter if R2 list is empty
     }
     produce("star-fusion.fusion_candidates.final.abridged")
     {
+      exec "rm -rf ${output.dir}/*", "run_remove_partial_file"
+
       exec "$SOFTWARE_PATH.PERL/perl $SOFTWARE_PATH.STAR_FUSION/STAR-Fusion --genome_lib_dir $ANNOTATION_PATH.STAR_FUSION_GENOME_LIB $read_para --output_dir $output.dir >$output.dir/star_fusion_${branch.sample}.blog 2>&1", "run_star_fusion"
     }
     sample_fusion_output[branch.sample] += " --star $output.abridged"
@@ -507,6 +511,8 @@ runMapSplice = {
     }
     produce("fusions_well_annotated.txt")
     {
+      exec "rm -rf ${output.dir}/*", "run_remove_partial_file"
+
       exec "$SOFTWARE_PATH.PYTHON/python $SOFTWARE_PATH.MAPSPLICE/mapsplice.py -p 6 --bam --fusion-non-canonical -c $ANNOTATION_PATH.chrSplits -x $ANNOTATION_PATH.BOWTIE_INDEX -o $output.dir $read_para --gene-gtf $ANNOTATION_PATH.GTF >$output.dir/mapsplice_${branch.sample}.blog 2>&1", "run_mapsplice"
     }
     sample_fusion_output[branch.sample] += " --mapsplice $output.txt"
@@ -518,6 +524,8 @@ runDefuse = {
     {
       produce("results.filtered.tsv")
       {
+        exec "rm -rf ${output.dir}/*", "run_remove_partial_file"
+
         exec "$SOFTWARE_PATH.PERL/perl $SOFTWARE_PATH.DEFUSE/scripts/defuse.pl --config $SOFTWARE_PATH.DEFUSE/scripts/config_homo_sapiens.txt --output $output.dir --parallel 12 --1fastq ${branch.R1_fusion_read} --2fastq ${branch.R2_fusion_read} >$output.dir/defuse_${branch.sample}.blog 2>&1", "run_defuse"
       }
       sample_fusion_output[branch.sample] += " --defuse $output.tsv"
@@ -530,6 +538,8 @@ runFusionCatcher = {
     {
       produce("final-list_candidate-fusion-genes.txt")
       {
+        exec "rm -rf ${output.dir}/*", "run_remove_partial_file"
+
         exec "$SOFTWARE_PATH.FUSIONCATCHER/bin/fusioncatcher -d $SOFTWARE_PATH.FUSIONCATCHER/data/ensembl_v77d -i ${branch.R1_fusion_read},${branch.R2_fusion_read} -o $output.dir -p 6 --skip-update-check --config=$SOFTWARE_PATH.FUSIONCATCHER/bin/configuration.cfg >$output.dir/fusioncatcher_${branch.sample}.blog 2>&1", "run_fusioncatcher"
       }
       sample_fusion_output[branch.sample] += " --fusioncatcher $output.txt"
