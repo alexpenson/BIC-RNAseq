@@ -27,14 +27,13 @@ def findFiles(rootDir,pattern):
     """
     filepaths = []
     pattern = '*'+pattern
-    #for path, dirs, files in os.walk(os.path.abspath(rootDir)):
-    files = os.listdir(os.path.abspath(rootDir))
-    if fnmatch.filter(files, pattern):
-        for file in fnmatch.filter(files, pattern):
-            filepaths.append(os.path.join(rootDir,file))
-    else:
-        if "Proj" in rootDir.split("/")[-1] and "-" in rootDir.split("/")[-1]:
-            print>>sys.stderr, "WARNING: No files matching pattern %s found in %s" %(pattern, path)
+    for path, dirs, files in os.walk(os.path.abspath(rootDir)):
+        if fnmatch.filter(files, pattern):
+            for file in fnmatch.filter(files, pattern):
+                filepaths.append(os.path.join(path,file))
+        else:
+            if "Proj" in path.split("/")[-1] and "-" in path.split("/")[-1]:
+                print>>sys.stderr, "WARNING: No files matching pattern %s found in %s" %(pattern, path)
 
     return filepaths
 
@@ -44,10 +43,11 @@ def getSampleID(filepath,pattern):
     """
     if filepath[-1] == "/":
        filepath = filepath[:-1]
-    file_name = os.path.basename(filepath)
 
-    #pattern = pattern.replace("*","")
-    samp = file_name.replace(pattern,"")
+    ## dir structure is:
+    ## [proj]/[results]/transcript/kallisto/[sample]/abundance.txt
+    dirs = filepath.split("/")
+    samp = dirs[dirs.index("kallisto")+1]
 
     return samp
 
@@ -58,9 +58,9 @@ def printMatrix(matrix,allSamps,id_idx,outFile):
     """
 
     if id_idx:
-        header = "GeneID\tGeneSymbol\t" + "\t".join(allSamps)
+        header = "TranscriptID\tGeneSymbol\t" + "\t".join(allSamps)
     else:
-        header = "GeneID\t" + "\t".join(allSamps)
+        header = "TranscriptID\t" + "\t".join(allSamps)
     with open(outFile,'w') as out:
         print>>out,header
         ids = sorted(matrix.keys())
@@ -112,6 +112,8 @@ def makeCountMatrix(args):
 
     id_idx = {}
 
+    ### right now we don't want to convert to gene symbols(?) but leaving
+    ### this code doesn't hurt
     if len(args) == 4:
         rootDir,filePattern,outFile,conversionFile = args
         id_idx = indexIdConversions(conversionFile)
@@ -149,7 +151,7 @@ def makeCountMatrix(args):
                 with open(file,'r') as fl:
                     for line in fl:
                         line = line.strip()
-                        id,count = line.split()
+                        id,l,effl,count,tpm = line.split()
                         gen_sym = ''
                         if id_idx:
                             gen_sym = getGeneSymbol(id, id_idx)

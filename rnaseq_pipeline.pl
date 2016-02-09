@@ -5,14 +5,19 @@ use Getopt::Long qw(GetOptions);
 use FindBin qw($Bin); 
 use Cwd;
 use Cwd 'abs_path';
-my ($map, $pre, $config, $help, $species, $cufflinks, $dexseq, $htseq, $chimerascan, $samplekey, $comparisons, $deseq, $star_fusion, $mapsplice, $defuse, $fusioncatcher, $detectFusions, $allfusions, $tophat, $star, $pass1, $lncrna, $lincrna_BROAD, $output, $strand, $r1adaptor, $r2adaptor, $transcript, $no_replicates, $max_bpipe_job);
+my ($map, $pre, $config, $help, $species, $cufflinks, $dexseq, $htseq, $chimerascan, $samplekey, $comparisons, $deseq, $star_fusion, $mapsplice, $defuse, $fusioncatcher, $detectFusions, $allfusions, $tophat, $star, $pass1, $lncrna, $lincrna_BROAD, $output, $strand, $r1adaptor, $r2adaptor, $transcript, $no_replicates, $max_bpipe_job, $rsem, $kallisto, $express, $standard, $rsync_path);
 
 
-my $bpipe_path = "";
+$max_bpipe_job = 1000;
+my $uID = `/usr/bin/id -u -n`;
+chomp $uID;
 my $software_config_file = "$Bin/software_config.txt";
 my $annotation_config = "$Bin/annotation_config.groovy";
+$rsync_path = "/ifs/solres/$uID/";
 $output = "results";
-$max_bpipe_job = 1000;
+my $bpipe_path = "";
+
+
 
 GetOptions ('map=s' => \$map,
 	        'pre=s' => \$pre,
@@ -35,13 +40,18 @@ GetOptions ('map=s' => \$map,
 	        'fusioncatcher' => \$fusioncatcher,
 	        'allfusions' => \$allfusions,
 	        'transcript' => \$transcript,
+            'kallisto' => \$kallisto,
+            'rsem' => \$rsem,
+            'express' => \$express,
+            'standard' => \$standard,
             'lncrna' => \$lncrna,
  	        'output|out|o=s' => \$output,
 	        'r1adaptor=s' => \$r1adaptor,
 	        'r2adaptor=s' => \$r2adaptor,
             'lincrna_BROAD' => \$lincrna_BROAD,
             'no_replicates' => \$no_replicates,
-            'max_bpipe_job=i' => \$max_bpipe_job) or exit(1);
+            'max_bpipe_job=i' => \$max_bpipe_job,
+            'rsync=s' => \$rsync_path) or exit(1);
 
 
 if(!$map || !$pre || !$species || !$strand || $help){
@@ -58,19 +68,52 @@ if(!$map || !$pre || !$species || !$strand || $help){
 	* ALIGNERS SUPPORTED: star (-star), defaults to 2pass method unless (-pass1) is specified; tophat2 (-tophat); if no aligner specifed, will default to STAR
 	* ANALYSES SUPPORTED: cufflinks (-cufflinks); htseq (-htseq); dexseq (-dexseq); deseq (-deseq; must specify samplekey and comparisons)
 	* FUSION DETECTION: supported fusion callers chimerascan (-chimerascan), star_fusion (-star_fusion), mapsplice (-mapsplice), defuse (-defuse), fusioncatcher (-fusioncatcher); -allfusions will run all supported fusion detection programs
-	* TRANSCRIPT ANALYSIS: enable transcript analysis using express and kallisto (-transcript)
-	* OUTPUT: output results directory (default: results)
+	* TRANSCRIPT ANALYSIS:  transcript analysis using express (-express), kallisto (-kallisto) and rsem (-rsem), or all (-transcript)
+	* STANDARD: standard analysis (-standard): star alignment, htseq gene count, rsem and kallisto transcript counts, counts normalization, and clustering
+    * OUTPUT: output results directory (default: results)
 	* OPTIONS: lncRNA analysis (-lncrna) runs all analyses based on lncRNA GTF (hg19 only); 
 	* max_bpipe_job: use -max_bpipe_job <int> to change the maximum number of cluster jobs that the current bpipe job is allowed to run at the same time. Defualt to 1,000
+    * -rsync: path to rsync after the pipeline finishes. Default is /ifs/solres/USER_ID/. Use -rsync NULL to disable automatic rsync.
 HELP
 exit;
 }
 
 
+if($standard)
+{                                                                                                                                                            
+    $star = 1;                                                                                                                                                      
+    $htseq = 1;                                                                                                                                                           
+    $kallisto = 1;                                                                                                                                                        
+    $rsem = 1;                                                                                                                                                            
+}
+
 if($samplekey || $comparisons)
 {
-    $deseq = 1;
     $htseq = 1;
+    $deseq = 1;
+}
+
+if(($star || $tophat) && !$htseq && !$dexseq){                                                                                                                                         
+    $htseq = 1;                                                                                                                                                           
+}
+
+if($transcript){                                                                                                                                                          
+    $kallisto = 1;                                                                                                                                                        
+    $rsem = 1;                                                                                                                                                            
+    ###$express = 1;                                                                                                                                                      
+}    
+
+if($allfusions)
+{
+    $chimerascan = 1;
+    $star_fusion = 1;
+    $mapsplice = 1;
+    $defuse = 1;
+    $fusioncatcher = 1;
+}
+
+if(($deseq || $dexseq || $htseq || $cufflinks) && (!$star && !$tophat) ){
+    $star = 1;
 }
 
 die "ERROR: -max_bpipe_job must >= 1\n" if($max_bpipe_job < 1);
@@ -117,16 +160,21 @@ else
 die "[ERROR]: Mapping file does not exist: $map\n" if(!-e $map);
 die "[ERROR]: Samplekey file does not exist: $samplekey\n" if($samplekey && !-e $samplekey);
 die "[ERROR]: Comparisons file file does not exist: $comparisons\n" if($comparisons && !-e $comparisons);
+die "[ERROR]: -rsync path does not exist: $rsync_path. Or use -rsync NULL to disable automatic rsync\n" if($rsync_path !~ /^null$/i && !-d $rsync_path);
 $map = abs_path($map);
 $samplekey = abs_path($samplekey);
 $comparisons = abs_path($comparisons);
+if($rsync_path !~ /^null$/i)
+{
+    $rsync_path = abs_path($rsync_path);
+}
 `mkdir -p $output`;
 die "[ERROR]: Could not create output directory: $output\n" if(!-d $output);
 $output = abs_path($output);
 `cp $Bin/rnaseq_pipeline.bpipe $output`;
 `cp $Bin/bpipe.config $output`;
 `sed -i s/PROJECT_NAME_TOBE_REPLACED/$pre/g $output/bpipe.config`;
-
+`sed -i s/USERID_TOBE_REPLACED/$uID/g $output/bpipe.config`;
 
 
 
@@ -144,7 +192,7 @@ while(<SC>){
 }
 close SC;
 die "[ERROR]: Could not find bpipe path in software config file: $software_config_file\n" if(!$bpipe_path);
-
+`ln -s -f $bpipe_path/bin/bpipe $output/`;
 
 
 
@@ -209,13 +257,17 @@ if($r1adaptor)
 {
     $extra_para .=  " -p flag_trim_read=true -p r1adaptor=$r1adaptor -p r2adaptor=$r2adaptor";
 }
+if($star)
+{
+    $extra_para .= " -p flag_star=true";
+}
 if($tophat)
 {
-    $extra_para .= " -p flag_aligner=tophat";
+    $extra_para .= " -p flag_tophat=true";
 }
 if($pass1)
 {
-    $extra_para .= " -p flag_star_2p=false";
+    $extra_para .= " -p flag_star_1p=true";
 }
 if($cufflinks)
 {
@@ -237,13 +289,9 @@ if($no_replicates)
 {
     $extra_para .= " -p flag_no_replicates=true";
 }
-if($allfusions || $chimerascan || $star_fusion || $mapsplice || $defuse || $fusioncatcher)
+if($chimerascan || $star_fusion || $mapsplice || $defuse || $fusioncatcher)
 {
     $extra_para .= " -p flag_detectfusion=true";
-}
-if($allfusions)
-{
-    $extra_para .= " -p flag_fusion_chimerascan=true -p flag_fusion_star=true -p flag_fusion_mapsplice=true -p flag_fusion_defuse=true -p flag_fusion_fusioncatcher=true";
 }
 if($chimerascan)
 {
@@ -265,21 +313,42 @@ if($fusioncatcher)
 {
     $extra_para .= " -p flag_fusion_fusioncatcher=true";
 }
-if($transcript)
+if($kallisto || $rsem || $express)
 {
     $extra_para .= " -p flag_transcript=true";
+}
+if($kallisto)
+{
+    $extra_para .= " -p flag_kallisto=true";
+}
+if($rsem)
+{
+    $extra_para .= " -p flag_rsem=true";
+}
+if($express)
+{
+    $extra_para .= " -p flag_express=true";
 }
 if($lncrna)
 {
     $extra_para .= " -p flag_lncrna=true";
 }
+if($rsync_path !~ /^null$/i)
+{
+    $extra_para .= " -p rsync_path=$rsync_path ";
+}
 
 chdir $output;
 
-`BPIPE_BACKGROUND=1 $bpipe_path/bin/bpipe run -n $max_bpipe_job -p Bin=$Bin -p species=$species -p pre=$pre -p htseq_stranded=$htseq_stranded -p picard_strand_specificity=$picard_strand_specificity -p MAPPING_FILE=$map -p SOFTWARE_CONFIG_FILE=$software_config_file -p ANNOTATION_CONFIG_FILE=$annotation_config $extra_para rnaseq_pipeline.bpipe`;
+`BPIPE_BACKGROUND=1 MAX_JAVA_MEM=2g $bpipe_path/bin/bpipe run -n $max_bpipe_job -p Bin=$Bin -p species=$species -p pre=$pre -p htseq_stranded=$htseq_stranded -p picard_strand_specificity=$picard_strand_specificity -p MAPPING_FILE=$map -p SOFTWARE_CONFIG_FILE=$software_config_file -p ANNOTATION_CONFIG_FILE=$annotation_config $extra_para rnaseq_pipeline.bpipe`;
 
+print "\n";
+print "-------------------------------------------------------------------------\n";
 print "Start running RNA-seq bpipe workflow\n";
-
+print "To stop the pipeline, go to the result directory and do \"./bpipe stop\"\n";
+print "To check the log, go to the result directory and do \"./bpipe log\"\n";
+print "-------------------------------------------------------------------------\n";
+print "\n";
 
 
 

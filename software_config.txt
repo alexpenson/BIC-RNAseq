@@ -1,4 +1,4 @@
-BPIPE			/opt/common/CentOS_6/bpipe/bpipe-0.9.8.7
+BPIPE			/opt/common/CentOS_6/bpipe/bpipe-0.9.9
 BOWTIE2			/opt/common/CentOS_6/bowtie2/bowtie2-2.2.4
 BOWTIE			/opt/common/CentOS_6/bowtie/bowtie-1.1.1
 CHIMERASCAN		/opt/common/CentOS_6/chimerascan/chimerascan-0.4.5/chimerascan
@@ -16,6 +16,7 @@ PERL			/opt/common/CentOS_6/perl/perl-5.22.0/bin
 PICARD			/opt/common/CentOS_6/picard/picard-tools-1.124
 PYTHON			/opt/common/CentOS_6/python/python-2.7.8/bin
 R			/opt/common/CentOS_6/R/R-3.2.0/bin
+RSEM			/opt/common/CentOS_6/rsem/RSEM-1.2.25
 SAMTOOLS                /opt/common/CentOS_6/samtools/samtools-0.1.19
 STAR			/opt/common/CentOS_6/star/STAR-STAR_2.5.0a/bin/Linux_x86_64
 STAR_FUSION		/opt/common/CentOS_6/STAR-Fusion/STAR-Fusion_v0.5.4/STAR-Fusion-master

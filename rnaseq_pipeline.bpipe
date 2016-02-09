@@ -12,12 +12,12 @@ species=""
 htseq_stranded=""
 picard_strand_specificity=""
 pre=""
-
-flag_trim_read=false   // default is don't trim
 r1adaptor=""
 r2adaptor=""
-flag_aligner="star"    //default is star 2pass
-flag_star_2p=true
+flag_trim_read=false
+flag_star=false
+flag_star_1p=false
+flag_tophat=false
 flag_cufflinks=false
 flag_htseq=false
 flag_dexseq=false
@@ -30,20 +30,27 @@ flag_fusion_mapsplice=false
 flag_fusion_defuse=false
 flag_fusion_fusioncatcher=false
 flag_transcript=false
+flag_kallisto=false
+flag_rsem=false
+flag_express=false
 flag_lncrna=false
-flag_sort_query_sam=(flag_htseq || flag_dexseq)
+rsync_path=""
 
-
+// user specific variables
 uID=System.getProperty("user.name")
+temp_dir="/scratch/$uID"
+
+// variables to be set by pipeline
 def SOFTWARE_PATH = [:]
 def ANNOTATION_PATH
 def sample_libs_run_path = [:]
 def sample_internal_path = [:]
 def sample_type_map = [:]
 def sample_fusion_output = [:]
-def sample_crm_output = ""
-def sample_asm_output = ""
-
+def star_crm_output = ""
+def star_asm_output = ""
+def tophat_crm_output = ""
+def tophat_asm_output = ""
 
 debug = {
   println "Bin=$Bin"
@@ -59,8 +66,9 @@ debug = {
   println "flag_trim_read=$flag_trim_read"
   println "r1adaptor=$r1adaptor"
   println "r2adaptor=$r2adaptor"
-  println "flag_aligner=$flag_aligner"
-  println "flag_star_2p=$flag_star_2p"
+  println "flag_star=$flag_star"
+  println "flag_star_1p=$flag_star_1p"
+  println "flag_tophat=$flag_tophat"
   println "flag_cufflinks=$flag_cufflinks"
   println "flag_htseq=$flag_htseq"
   println "flag_dexseq=$flag_dexseq"
@@ -72,9 +80,10 @@ debug = {
   println "flag_fusion_mapsplice=$flag_fusion_mapsplice"
   println "flag_fusion_defuse=$flag_fusion_defuse"
   println "flag_fusion_fusioncatcher=$flag_fusion_fusioncatcher"
-  println "flag_transcript=$flag_transcript"
+  println "flag_kallisto=$flag_kallisto"
+  println "flag_rsem=$flag_rsem"
+  println "flag_express=$flag_express"
   println "flag_lncrna=$flag_lncrna"
-  println "flag_sort_query_sam=$flag_sort_query_sam"
   fail "debug"
 }
 
@@ -185,8 +194,8 @@ linkRead = {
 	branch.libid = branch.data[1]
 	branch.runid = branch.data[2]
 	output.dir = "intFiles/$branch.sample/$branch.libid/$branch.runid/"
-	produce("softlink.done") {
-	  exec "ln -s -f $input/* $output.dir >$output.done", "link_read"
+	produce("link_read_" + branch.sample + ".done") {
+	  exec "ln -s -f $input/* $output.dir >$output", "link_read"
   }
 }
 
@@ -227,10 +236,10 @@ prepareRead = {
       }
     }
   }
-	branch.R1_space_list = branch.R1.join(" ")
-	branch.R2_space_list = (branch.type == "PE") ? branch.R2.join(" ") : ""
-  branch.R1_comma_list = branch.R1.join(",")
-  branch.R2_comma_list = (branch.type == "PE") ? branch.R2.join(",") : ""
+	branch.R1_merge_list = branch.R1.join(" ")
+	branch.R2_merge_list = (branch.type == "PE") ? branch.R2.join(" ") : ""
+  branch.R1_alignment_read = branch.R1.join(",")
+  branch.R2_alignment_read = (branch.type == "PE") ? branch.R2.join(",") : ""
   sample_fusion_output[branch.sample] = ""
 }
 
@@ -239,18 +248,22 @@ mergeRead = {
 	output.dir = "intFiles/$branch.sample/"
   if(branch.type == "SE") {
 	  produce(branch.sample + "_R1_ORI.fastq"){	
-		  exec "zcat $branch.R1_space_list >$output.fastq", "merge_read"
+		  exec "zcat $branch.R1_merge_list >$output.fastq", "merge_read"
     }
-    branch.original_merge_read1 = output1.fastq
-    branch.original_merge_read2 = ""
+    branch.R1_fusion_read = output1.fastq
+    branch.R2_fusion_read = ""
+    branch.R1_transcript_read = output1.fastq
+    branch.R2_transcript_read = ""
   }
   else if(branch.type == "PE"){
     produce(branch.sample + "_R1_ORI.fastq", branch.sample + "_R2_ORI.fastq"){ 
-      exec "zcat $branch.R1_space_list >$output1.fastq", "merge_read"
-      exec "zcat $branch.R2_space_list >$output2.fastq", "merge_read"
+      exec "zcat $branch.R1_merge_list >$output1.fastq", "merge_read"
+      exec "zcat $branch.R2_merge_list >$output2.fastq", "merge_read"
     }
-    branch.original_merge_read1 = output1.fastq
-    branch.original_merge_read2 = output2.fastq
+    branch.R1_fusion_read = output1.fastq
+    branch.R2_fusion_read = output2.fastq
+    branch.R1_transcript_read = output1.fastq
+    branch.R2_transcript_read = output2.fastq
   }
 }
 
@@ -258,14 +271,14 @@ trimRead = {
     output.dir = "intFiles/$branch.sample/"
     if(branch.type == "SE") {
       produce(branch.sample + "_R1_CT.fastq"){ 
-        exec "$SOFTWARE_PATH.PYTHON/python $SOFTWARE_PATH.CUTADAPT/cutadapt -f fastq -m $branch.min_read_len_cutadapt -a $r1adaptor -O 10 -o $output.fastq $input1.fastq >$output.dir/${branch.sample}_R1_CUTADAPT_STATS.txt >$output.dir/cutadapt_trim_se.log 2>&1", "trim_read" 
+        exec "$SOFTWARE_PATH.PYTHON/python $SOFTWARE_PATH.CUTADAPT/cutadapt -f fastq -m $branch.min_read_len_cutadapt -a $r1adaptor -O 10 -o $output.fastq $input1.fastq >$output.dir/${branch.sample}_R1_CUTADAPT_STATS.txt 2>$output.dir/trim_read_se_${branch.sample}.blog", "trim_read" 
       }
     }
     else if(branch.type == "PE"){
       produce(branch.sample + "_R1_CT.fastq", branch.sample + "_R2_CT.fastq"){  
-        exec "$SOFTWARE_PATH.PYTHON/python $SOFTWARE_PATH.CUTADAPT/cutadapt -f fastq -m $branch.min_read_len_cutadapt -a $r1adaptor -O 10 --paired-output $output.dir/${branch.sample}_R2_TEMP.fastq -o $output.dir/${branch.sample}_R1_TEMP.fastq $input1.fastq $input2.fastq >$output.dir/${branch.sample}_R1_CUTADAPT_STATS.txt >$output.dir/cutadapt_trim_pe1.log 2>&1", "trim_read" 
+        exec "$SOFTWARE_PATH.PYTHON/python $SOFTWARE_PATH.CUTADAPT/cutadapt -f fastq -m $branch.min_read_len_cutadapt -a $r1adaptor -O 10 --paired-output $output.dir/${branch.sample}_R2_TEMP.fastq -o $output.dir/${branch.sample}_R1_TEMP.fastq $input1.fastq $input2.fastq >$output.dir/${branch.sample}_R1_CUTADAPT_STATS.txt 2>$output.dir/trim_read_pe1_${branch.sample}.blog", "trim_read" 
         
-        exec "$SOFTWARE_PATH.PYTHON/python $SOFTWARE_PATH.CUTADAPT/cutadapt -f fastq -m $branch.min_read_len_cutadapt -a $r2adaptor -O 10 --paired-output $output1.fastq -o $output2.fastq $output.dir/${branch.sample}_R2_TEMP.fastq $output.dir/${branch.sample}_R1_TEMP.fastq >$output.dir/${branch.sample}_R2_CUTADAPT_STATS.txt >$output.dir/cutadapt_trim_pe2.log 2>&1", "trim_read"
+        exec "$SOFTWARE_PATH.PYTHON/python $SOFTWARE_PATH.CUTADAPT/cutadapt -f fastq -m $branch.min_read_len_cutadapt -a $r2adaptor -O 10 --paired-output $output1.fastq -o $output2.fastq $output.dir/${branch.sample}_R2_TEMP.fastq $output.dir/${branch.sample}_R1_TEMP.fastq >$output.dir/${branch.sample}_R2_CUTADAPT_STATS.txt 2>$output.dir/trim_read_pe2_${branch.sample}.blog", "trim_read"
       }
     }
 }
@@ -276,45 +289,46 @@ compressRead = {
 	    produce(branch.sample + "_R1.fastq.gz"){
 		    exec "gzip -c $input1.fastq >$output1.gz", "compress_read"
       }
-      branch.R1_comma_list = output1.gz
+      branch.R1_alignment_read = output1.gz
+      branch.R1_transcript_read = output1.gz
     }
     else if(branch.type == "PE"){
       produce(branch.sample + "_R1.fastq.gz", branch.sample + "_R2.fastq.gz"){
         exec "gzip -c $input1.fastq >$output1.gz", "compress_read"
 		    exec "gzip -c $input2.fastq >$output2.gz", "compress_read"
-    }
-		branch.R1_comma_list = output1.gz
-		branch.R2_comma_list = output2.gz
+      }
+      branch.R1_alignment_read = output1.gz
+      branch.R2_alignment_read = output2.gz
+      branch.R1_transcript_read = output1.gz
+      branch.R2_transcript_read = output2.gz
 	 }
 }
 
 runTopHat = {   // it doesn't matter if R2 list is empty
     output.dir = "intFiles/tophat2/$branch.sample/"
     produce("accepted_hits.bam"){
-      exec "$SOFTWARE_PATH.TOPHAT/tophat2 -p 6 -r 70 --mate-std-dev 90 --GTF $ANNOTATION_PATH.GTF --transcriptome-index=$ANNOTATION_PATH.TRANS_INDEX -o $output.dir --rg-id ${branch.sample}_1 --rg-sample $branch.sample --rg-library ${branch.sample}_1 --rg-platform Illumina --rg-platform-unit ${branch.sample}_1 $ANNOTATION_PATH.BOWTIE2_INDEX $branch.R1_comma_list $branch.R2_comma_list >$output.dir/tophat.log 2>&1", "run_tophat"
+      exec "$SOFTWARE_PATH.TOPHAT/tophat2 -p 6 -r 70 --mate-std-dev 90 --GTF $ANNOTATION_PATH.GTF --transcriptome-index=$ANNOTATION_PATH.TRANS_INDEX -o $output.dir --rg-id ${branch.sample}_1 --rg-sample $branch.sample --rg-library ${branch.sample}_1 --rg-platform Illumina --rg-platform-unit ${branch.sample}_1 $ANNOTATION_PATH.BOWTIE2_INDEX $branch.R1_alignment_read $branch.R2_alignment_read >$output.dir/tophat2_${branch.sample}.blog 2>&1", "run_tophat"
     }
-    branch.tophat_bam = output.bam
 }
 
 reorderSam = {
-    output.dir = "alignments/tophat2/"
+    output.dir = "gene/alignments/tophat2/"
     produce(pre + "_" + branch.sample + ".bam"){
-      exec "$SOFTWARE_PATH.JAVA/java -Xms256m -Xmx10g -XX:-UseGCOverheadLimit -Djava.io.tmpdir=/scratch/$uID -jar $SOFTWARE_PATH.PICARD/picard.jar ReorderSam I=$input.bam O=$output.bam REFERENCE=$ANNOTATION_PATH.REF_SEQ VALIDATION_STRINGENCY=LENIENT TMP_DIR=/scratch/$uID CREATE_INDEX=true >${output.bam}.log 2>&1", "reorder_sam"
+      exec "$SOFTWARE_PATH.JAVA/java -Xms256m -Xmx10g -XX:-UseGCOverheadLimit -Djava.io.tmpdir=$temp_dir -jar $SOFTWARE_PATH.PICARD/picard.jar ReorderSam I=$input.bam O=$output.bam REFERENCE=$ANNOTATION_PATH.REF_SEQ VALIDATION_STRINGENCY=LENIENT TMP_DIR=$temp_dir CREATE_INDEX=true >${output.dir}/tophat_reordersam_${branch.sample}.blog 2>&1", "reorder_sam"
     }
-    branch.final_bam = output.bam
 }
 
 runStar1P = {   // it doesn't matter if R2 list is empty
     output.dir = "intFiles/$branch.sample/"
     produce(branch.sample + "_STAR_1PASS_Aligned.out.sam", branch.sample + "_STAR_1PASS_SJ.out.tab"){
-    	exec "$SOFTWARE_PATH.STAR/STAR --genomeDir $ANNOTATION_PATH.starDB --readFilesIn $branch.R1_comma_list $branch.R2_comma_list --runThreadN 12 --outFileNamePrefix $output.dir/${branch.sample}_STAR_1PASS_ --outSAMstrandField intronMotif --outFilterIntronMotifs RemoveNoncanonicalUnannotated --outSAMattributes All --outSAMunmapped Within --readFilesCommand zcat >$output.dir/star1p.log 2>&1", "run_star_1p"
+    	exec "$SOFTWARE_PATH.STAR/STAR --genomeDir $ANNOTATION_PATH.starDB --readFilesIn $branch.R1_alignment_read $branch.R2_alignment_read --runThreadN 12 --outFileNamePrefix $output.dir/${branch.sample}_STAR_1PASS_ --outSAMstrandField intronMotif --outFilterIntronMotifs RemoveNoncanonicalUnannotated --outSAMattributes All --outSAMunmapped Within --readFilesCommand zcat >$output.dir/star1p_${branch.sample}.blog 2>&1", "run_star_1p"
     }
 }
 
 runStar2PGG = {
     output.dir = "intFiles/$branch.sample/star2passGG"
     produce("SAindex"){
-    	exec "$SOFTWARE_PATH.STAR/STAR --runMode genomeGenerate --outFileNamePrefix $output.dir/ --genomeDir $output.dir --genomeFastaFiles $ANNOTATION_PATH.REF_SEQ --sjdbFileChrStartEnd $input.tab --sjdbOverhang $branch.min_read_len_star --runThreadN 12 >$output.dir/star2pgg.log 2>&1", "run_star_2p_gg"
+    	exec "$SOFTWARE_PATH.STAR/STAR --runMode genomeGenerate --outFileNamePrefix $output.dir/ --genomeDir $output.dir --genomeFastaFiles $ANNOTATION_PATH.REF_SEQ --sjdbFileChrStartEnd $input.tab --sjdbOverhang $branch.min_read_len_star --runThreadN 12 >$output.dir/star2pgg_${branch.sample}.blog 2>&1", "run_star_2p_gg"
     }
     branch.star_2p_gg = output.dir
 }
@@ -322,31 +336,30 @@ runStar2PGG = {
 runStar2P = {   // it doesn't matter if R2 list is empty
     output.dir = "intFiles/$branch.sample"
     produce(branch.sample + "_STAR_2PASS_Aligned.out.sam", branch.sample + "_STAR_2PASS_SJ.out.tab"){
-    	exec "$SOFTWARE_PATH.STAR/STAR --genomeDir $branch.star_2p_gg --readFilesIn $branch.R1_comma_list $branch.R2_comma_list --runThreadN 12 --outFileNamePrefix $output.dir/${branch.sample}_STAR_2PASS_ --outSAMstrandField intronMotif --outFilterIntronMotifs RemoveNoncanonicalUnannotated --outSAMattributes All --outSAMunmapped Within --readFilesCommand zcat >$output.dir/star2p.log 2>&1", "run_star_2p"
+    	exec "$SOFTWARE_PATH.STAR/STAR --genomeDir $branch.star_2p_gg --readFilesIn $branch.R1_alignment_read $branch.R2_alignment_read --runThreadN 12 --outFileNamePrefix $output.dir/${branch.sample}_STAR_2PASS_ --outSAMstrandField intronMotif --outFilterIntronMotifs RemoveNoncanonicalUnannotated --outSAMattributes All --outSAMunmapped Within --readFilesCommand zcat >$output.dir/star2p_${branch.sample}.blog 2>&1", "run_star_2p"
     }
 }
 
 runStarProcessing = {
     output.dir = "intFiles/$branch.sample"
     produce(input.sam.replaceFirst(~/^.*\/([^\/]+)$/, '$1') + "_filtered.sam"){
-    	exec "$SOFTWARE_PATH.PERL/perl $Bin/starProcessing.pl $input.sam >$output.dir/star_processing.log 2>&1", "run_star_processing"
+    	exec "$SOFTWARE_PATH.PERL/perl $Bin/starProcessing.pl $input.sam >$output.dir/star_processing_${branch.sample}.blog 2>&1", "run_star_processing"
     }
 }
 
 addGroup = {
-    output.dir = "alignments"
+    output.dir = "gene/alignments"
     produce(pre + "_" + branch.sample + ".bam"){
-      exec "$SOFTWARE_PATH.JAVA/java -Xms256m -Xmx10g -XX:-UseGCOverheadLimit -Djava.io.tmpdir=/scratch/$uID -jar $SOFTWARE_PATH.PICARD/picard.jar AddOrReplaceReadGroups I=$input.sam O=$output.bam SORT_ORDER=coordinate VALIDATION_STRINGENCY=LENIENT TMP_DIR=/scratch/$uID CREATE_INDEX=true RGID=${branch.sample}_1 RGLB=_1 RGPL=Illumina RGPU=${branch.sample}_1 RGSM=$branch.sample >${output.bam}.log 2>&1", "add_group"
+      exec "$SOFTWARE_PATH.JAVA/java -Xms256m -Xmx10g -XX:-UseGCOverheadLimit -Djava.io.tmpdir=$temp_dir -jar $SOFTWARE_PATH.PICARD/picard.jar AddOrReplaceReadGroups I=$input.sam O=$output.bam SORT_ORDER=coordinate VALIDATION_STRINGENCY=LENIENT TMP_DIR=$temp_dir CREATE_INDEX=true RGID=${branch.sample}_1 RGLB=_1 RGPL=Illumina RGPU=${branch.sample}_1 RGSM=$branch.sample >${output.dir}/star_addreadgroup_${branch.sample}.blog 2>&1", "add_group"
     }
-    branch.final_bam = output.bam
 }
 
 
 runCufflinks = {
-    if(flag_aligner == "star"){
+    if(current_aligner == "star"){
       output.dir = "cufflinks/$branch.sample"
     }
-    else if(flag_aligner == "tophat"){
+    else if(current_aligner == "tophat"){
       output.dir = "cufflinks/tophat2/$branch.sample"
     }
     else
@@ -354,49 +367,109 @@ runCufflinks = {
       fail "ERROR: unrecognized aligner parameter"
     }
     produce("transcripts.gtf"){
-    	exec "$SOFTWARE_PATH.CUFFLINKS/cufflinks -q -p 12 --no-update-check -N -G $ANNOTATION_PATH.GTF -o $output.dir $branch.final_bam >$output.dir/cufflink.log 2>&1", "run_cufflinks"
+    	exec "$SOFTWARE_PATH.CUFFLINKS/cufflinks -q -p 12 --no-update-check -N -G $ANNOTATION_PATH.GTF -o $output.dir $input.bam >$output.dir/cufflinks_${current_aligner}_${branch.sample}.blog 2>&1", "run_cufflinks"
     }
 }
 
 
 sortSamQueryName = {
-    output.dir = "intFiles/$branch.sample"
-    produce(branch.sample + "_queryname_sorted.sam"){
-    	exec "$SOFTWARE_PATH.JAVA/java -Xms256m -Xmx48g -XX:-UseGCOverheadLimit -Djava.io.tmpdir=/scratch/$uID -jar $SOFTWARE_PATH.PICARD/picard.jar MergeSamFiles INPUT=$branch.final_bam OUTPUT=$output.sam SORT_ORDER=queryname TMP_DIR=/scratch/$uID VALIDATION_STRINGENCY=LENIENT >$output.dir/sort_sam_queryname.log 2>&1", "sort_sam_query_name"
+    if(current_aligner == "star"){
+      output.dir = "intFiles/$branch.sample"
     }
-    branch.query_name_sorted_sam = output.sam
+    else if(current_aligner == "tophat"){
+      output.dir = "intFiles/tophat2/$branch.sample"
+    }
+    else
+    {
+      fail "ERROR: unrecognized aligner parameter"
+    }
+    produce(branch.sample + "_queryname_sorted.sam"){
+    	exec "$SOFTWARE_PATH.JAVA/java -Xms256m -Xmx48g -XX:-UseGCOverheadLimit -Djava.io.tmpdir=$temp_dir -jar $SOFTWARE_PATH.PICARD/picard.jar MergeSamFiles INPUT=$input OUTPUT=$output.sam SORT_ORDER=queryname TMP_DIR=$temp_dir VALIDATION_STRINGENCY=LENIENT >$output.dir/sort_sam_queryname_${current_aligner}_${branch.sample}.blog 2>&1", "sort_sam_query_name"
+    }
 }
 
 
 runHtseq = {
-    output.dir = "counts_gene"
+    if(current_aligner == "star"){
+      output.dir = "gene/counts_gene/"
+    }
+    else if(current_aligner == "tophat"){
+      output.dir = "gene/counts_gene/tophat2"
+    }
+    else
+    {
+      fail "ERROR: unrecognized aligner parameter"
+    }
     produce(branch.sample + ".htseq_count"){
-    	exec "$SOFTWARE_PATH.PYTHON/python $SOFTWARE_PATH.HTSEQ/htseq-count -m intersection-strict -s $htseq_stranded -t exon $branch.query_name_sorted_sam $ANNOTATION_PATH.GTF >$output.htseq_count 2>${output.htseq_count}.log", "run_htseq"
+    	exec "$SOFTWARE_PATH.PYTHON/python $SOFTWARE_PATH.HTSEQ/htseq-count -m intersection-strict -s $htseq_stranded -t exon $input.sam $ANNOTATION_PATH.GTF >$output.htseq_count 2>$output.dir/htseq_${current_aligner}_${branch.sample}.blog", "run_htseq"
     }
 }
 
 runDexseq = {
-    output.dir = "counts_exon"
+    if(current_aligner == "star"){
+      output.dir = "exon/counts_exon/"
+    }
+    else if(current_aligner == "tophat"){
+      output.dir = "exon/counts_exon/tophat2"
+    }
+    else
+    {
+      fail "ERROR: unrecognized aligner parameter"
+    }
     produce(branch.sample + ".dexseq_count"){
-    	exec "$SOFTWARE_PATH.PYTHON/python $SOFTWARE_PATH.DEXSEQ/dexseq_count.py -s no $ANNOTATION_PATH.DEXSEQ_GTF $branch.query_name_sorted_sam $output.dexseq_count >${output.dexseq_count}.log 2>&1", "run_dexseq"
+    	exec "$SOFTWARE_PATH.PYTHON/python $SOFTWARE_PATH.DEXSEQ/dexseq_count.py -s no $ANNOTATION_PATH.DEXSEQ_GTF $input.sam $output.dexseq_count >$output.dir/dexseq_${current_aligner}_${branch.sample}.blog 2>&1", "run_dexseq"
     }
 }
 
 
 collectRNAseqMetrics = {
-    output.dir = "metrics"
-    produce(pre + "_" + branch.sample + "_CollectRnaSeqMetrics.txt", pre + "_" + branch.sample + "_CollectRnaSeqMetrics_chart.pdf"){
-    	exec "$SOFTWARE_PATH.JAVA/java -Xms256m -Xmx3g -XX:-UseGCOverheadLimit -Djava.io.tmpdir=/scratch/$uID -jar $SOFTWARE_PATH.PICARD/picard.jar CollectRnaSeqMetrics I=$branch.final_bam O=$output1.txt CHART_OUTPUT=$output2.pdf REF_FLAT=$ANNOTATION_PATH.REF_FLAT RIBOSOMAL_INTERVALS=$ANNOTATION_PATH.RIBOSOMAL_INTERVALS STRAND_SPECIFICITY=$picard_strand_specificity METRIC_ACCUMULATION_LEVEL=null METRIC_ACCUMULATION_LEVEL=SAMPLE >${output1.txt}.log 2>&1", "collect_rnaseq_metrics"
+    def chart_dir = output.dir
+    if(current_aligner == "star"){
+      output.dir = "metrics/crm"
+      chart_dir = output.dir
+      output.dir = "intFiles"
     }
-    sample_crm_output += " -metrics $output.txt"
+    else if(current_aligner == "tophat"){
+      output.dir = "metrics/tophat2/crm"
+      chart_dir = output.dir
+      output.dir = "intFiles/tophat2"
+    }
+    else
+    {
+      fail "ERROR: unrecognized aligner parameter"
+    }
+    produce(pre + "_" + branch.sample + "_CollectRnaSeqMetrics.txt"){
+    	exec "$SOFTWARE_PATH.JAVA/java -Xms256m -Xmx3g -XX:-UseGCOverheadLimit -Djava.io.tmpdir=$temp_dir -jar $SOFTWARE_PATH.PICARD/picard.jar CollectRnaSeqMetrics I=$input.bam O=$output.txt CHART_OUTPUT=${chart_dir}/${pre}_${branch.sample}_CollectRnaSeqMetrics_chart.pdf REF_FLAT=$ANNOTATION_PATH.REF_FLAT RIBOSOMAL_INTERVALS=$ANNOTATION_PATH.RIBOSOMAL_INTERVALS STRAND_SPECIFICITY=$picard_strand_specificity METRIC_ACCUMULATION_LEVEL=null METRIC_ACCUMULATION_LEVEL=SAMPLE >$output.dir/rnaseq_metrics_${current_aligner}_${branch.sample}.blog 2>&1", "collect_rnaseq_metrics"
+    }
+    if(current_aligner == "star"){
+      star_crm_output += " -metrics $output.txt"
+    }
+    else if(current_aligner == "tophat"){
+      tophat_crm_output += " -metrics $output.txt"
+    }
 }
 
 collectAlignmentSummaryMetrics = {
-    output.dir = "metrics"
-    produce(pre + "_" + branch.sample + "_AlignmentSummaryMetrics.txt"){
-    	exec "$SOFTWARE_PATH.JAVA/java -Djava.io.tmpdir=/scratch/$uID -jar $SOFTWARE_PATH.PICARD/picard.jar CollectAlignmentSummaryMetrics INPUT=$branch.final_bam OUTPUT=$output.txt REFERENCE_SEQUENCE=$ANNOTATION_PATH.REF_SEQ METRIC_ACCUMULATION_LEVEL=null METRIC_ACCUMULATION_LEVEL=SAMPLE VALIDATION_STRINGENCY=LENIENT >${output1.txt}.log 2>&1", "collect_alignment_summary_metrics"
+    if(current_aligner == "star"){
+      output.dir = "intFiles"
     }
-    sample_asm_output += " -metrics $output.txt"
+    else if(current_aligner == "tophat"){
+      output.dir = "intFiles/tophat2"
+    }
+    else
+    {
+      fail "ERROR: unrecognized aligner parameter"
+    }
+    produce(pre + "_" + branch.sample + "_AlignmentSummaryMetrics.txt"){
+    	exec "$SOFTWARE_PATH.JAVA/java -Djava.io.tmpdir=$temp_dir -jar $SOFTWARE_PATH.PICARD/picard.jar CollectAlignmentSummaryMetrics INPUT=$input.bam OUTPUT=$output.txt REFERENCE_SEQUENCE=$ANNOTATION_PATH.REF_SEQ METRIC_ACCUMULATION_LEVEL=null METRIC_ACCUMULATION_LEVEL=SAMPLE VALIDATION_STRINGENCY=LENIENT >$output.dir/alignment_summary_metrics_${current_aligner}_${branch.sample}.blog 2>&1", "collect_alignment_summary_metrics"
+    }
+
+    if(current_aligner == "star"){
+      star_asm_output += " -metrics $output.txt"
+    }
+    else if(current_aligner == "tophat"){
+      tophat_asm_output += " -metrics $output.txt"
+    }
 }
 
 runChimeraScan = {    // chimerascan does not support single end read
@@ -405,7 +478,7 @@ runChimeraScan = {    // chimerascan does not support single end read
     {
       produce("chimeras.bedpe")
       {
-        exec "$SOFTWARE_PATH.PYTHON/python $SOFTWARE_PATH.CHIMERASCAN/chimerascan_run.py --bowtie-path=$SOFTWARE_PATH.BOWTIE -p 6 --quals solexa --multihits=10 --filter-false-pos=$Bin/data/hg19_bodymap_false_positive_chimeras.txt $ANNOTATION_PATH.CHIMERASCAN_INDEX $branch.original_merge_read1 $branch.original_merge_read2 $output.dir >$output.dir/chimerascan.log 2>&1", "run_chimerascan"
+        exec "$SOFTWARE_PATH.PYTHON/python $SOFTWARE_PATH.CHIMERASCAN/chimerascan_run.py --bowtie-path=$SOFTWARE_PATH.BOWTIE -p 6 --quals solexa --multihits=10 --filter-false-pos=$Bin/data/hg19_bodymap_false_positive_chimeras.txt $ANNOTATION_PATH.CHIMERASCAN_INDEX $branch.R1_fusion_read $branch.R2_fusion_read $output.dir >$output.dir/chimerascan_${branch.sample}.blog 2>&1", "run_chimerascan"
       }
       sample_fusion_output[branch.sample] += " --chimerascan $output.bedpe"
     }
@@ -413,28 +486,28 @@ runChimeraScan = {    // chimerascan does not support single end read
 
 runStarFusion = {   // it doesn't matter if R2 list is empty
     output.dir = "fusion/star/$branch.sample"
-    def read_para = "--left_fq $branch.original_merge_read1"
+    def read_para = "--left_fq $branch.R1_fusion_read"
     if(branch.type == "PE")
     {
-      read_para += " --right_fq $branch.original_merge_read2"
+      read_para += " --right_fq $branch.R2_fusion_read"
     }
     produce("star-fusion.fusion_candidates.final.abridged")
     {
-      exec "$SOFTWARE_PATH.PERL/perl $SOFTWARE_PATH.STAR_FUSION/STAR-Fusion --genome_lib_dir $ANNOTATION_PATH.STAR_FUSION_GENOME_LIB $read_para --output_dir $output.dir >$output.dir/star_fusion.log 2>&1", "run_star_fusion"
+      exec "$SOFTWARE_PATH.PERL/perl $SOFTWARE_PATH.STAR_FUSION/STAR-Fusion --genome_lib_dir $ANNOTATION_PATH.STAR_FUSION_GENOME_LIB $read_para --output_dir $output.dir >$output.dir/star_fusion_${branch.sample}.blog 2>&1", "run_star_fusion"
     }
     sample_fusion_output[branch.sample] += " --star $output.abridged"
 }
 
 runMapSplice = {
     output.dir = "fusion/mapsplice/$branch.sample"
-    def read_para = "-1 $branch.original_merge_read1"
+    def read_para = "-1 $branch.R1_fusion_read"
     if(branch.type == "PE")
     {
-      read_para += " -2 $branch.original_merge_read2"
+      read_para += " -2 $branch.R2_fusion_read"
     }
     produce("fusions_well_annotated.txt")
     {
-      exec "$SOFTWARE_PATH.PYTHON/python $SOFTWARE_PATH.MAPSPLICE/mapsplice.py -p 6 --bam --fusion-non-canonical -c $ANNOTATION_PATH.chrSplits -x $ANNOTATION_PATH.BOWTIE_INDEX -o $output.dir $read_para --gene-gtf $ANNOTATION_PATH.GTF >$output.dir/mapsplice.log 2>&1", "run_mapsplice"
+      exec "$SOFTWARE_PATH.PYTHON/python $SOFTWARE_PATH.MAPSPLICE/mapsplice.py -p 6 --bam --fusion-non-canonical -c $ANNOTATION_PATH.chrSplits -x $ANNOTATION_PATH.BOWTIE_INDEX -o $output.dir $read_para --gene-gtf $ANNOTATION_PATH.GTF >$output.dir/mapsplice_${branch.sample}.blog 2>&1", "run_mapsplice"
     }
     sample_fusion_output[branch.sample] += " --mapsplice $output.txt"
 }
@@ -445,7 +518,7 @@ runDefuse = {
     {
       produce("results.filtered.tsv")
       {
-        exec "$SOFTWARE_PATH.PERL/perl $SOFTWARE_PATH.DEFUSE/scripts/defuse.pl --config $SOFTWARE_PATH.DEFUSE/scripts/config_homo_sapiens.txt --output $output.dir --parallel 12 --1fastq ${branch.original_merge_read1} --2fastq ${branch.original_merge_read2} >$output.dir/defuse.log 2>&1", "run_defuse"
+        exec "$SOFTWARE_PATH.PERL/perl $SOFTWARE_PATH.DEFUSE/scripts/defuse.pl --config $SOFTWARE_PATH.DEFUSE/scripts/config_homo_sapiens.txt --output $output.dir --parallel 12 --1fastq ${branch.R1_fusion_read} --2fastq ${branch.R2_fusion_read} >$output.dir/defuse_${branch.sample}.blog 2>&1", "run_defuse"
       }
       sample_fusion_output[branch.sample] += " --defuse $output.tsv"
     }
@@ -457,7 +530,7 @@ runFusionCatcher = {
     {
       produce("final-list_candidate-fusion-genes.txt")
       {
-        exec "$SOFTWARE_PATH.FUSIONCATCHER/bin/fusioncatcher -d $SOFTWARE_PATH.FUSIONCATCHER/data/ensembl_v77d -i ${branch.original_merge_read1},${branch.original_merge_read2} -o $output.dir -p 6 --skip-update-check --config=$SOFTWARE_PATH.FUSIONCATCHER/bin/configuration.cfg >$output.dir/fusioncatcher.log 2>&1", "run_fusioncatcher"
+        exec "$SOFTWARE_PATH.FUSIONCATCHER/bin/fusioncatcher -d $SOFTWARE_PATH.FUSIONCATCHER/data/ensembl_v77d -i ${branch.R1_fusion_read},${branch.R2_fusion_read} -o $output.dir -p 6 --skip-update-check --config=$SOFTWARE_PATH.FUSIONCATCHER/bin/configuration.cfg >$output.dir/fusioncatcher_${branch.sample}.blog 2>&1", "run_fusioncatcher"
       }
       sample_fusion_output[branch.sample] += " --fusioncatcher $output.txt"
     }
@@ -476,84 +549,174 @@ runBowtie2 = {
   def read_para = ""
   if(branch.type == "PE")
   {
-    read_para = "-1 $branch.original_merge_read1 -2 $branch.original_merge_read2"
+    read_para = "-1 $branch.R1_transcript_read -2 $branch.R2_transcript_read"
   }
   else
   {
-      read_para = "-U $branch.original_merge_read1"
+      read_para = "-U $branch.R1_transcript_read"
   }
   produce(branch.sample + "_bowtie2.sam"){
-  exec "$SOFTWARE_PATH.BOWTIE2/bowtie2 --all --maxins 600 --rdg 6,5 --rfg 6,5 --score-min L,-.6,-.4 --no-discordant --no-mixed --threads 24 -x $ANNOTATION_PATH.TRANS_INDEX_DEDUP $read_para -S $output.sam >$output.dir/bowtie2.log 2>&1", "run_bowtie2"
+  exec "$SOFTWARE_PATH.BOWTIE2/bowtie2 --all --maxins 600 --rdg 6,5 --rfg 6,5 --score-min L,-.6,-.4 --no-discordant --no-mixed --threads 24 -x $ANNOTATION_PATH.TRANS_INDEX_DEDUP $read_para -S $output.sam >$output.dir/bowtie2_${branch.sample}.blog 2>&1", "run_bowtie2"
   branch.bowtie2_sam = output.sam
   }
 }
 
 runExpress = {
-  output.dir = "transcript/express/$branch.sample"
+  output.dir = "transcript/counts/express/$branch.sample"
   produce("results.xprs") {
-    exec "$SOFTWARE_PATH.EXPRESS/express --output-dir $output.dir --no-update-check $ANNOTATION_PATH.TRANS_FASTA_DEDUP $branch.bowtie2_sam >$output.dir/express.log 2>&1", "run_express"
+    exec "$SOFTWARE_PATH.EXPRESS/express --output-dir $output.dir --no-update-check $ANNOTATION_PATH.TRANS_FASTA_DEDUP $branch.bowtie2_sam >$output.dir/express_${branch.sample}.blog 2>&1", "run_express"
   }
 }
 
 
-runKallisto = {     // it doesn't matter if R2 list is empty
-  output.dir = "transcript/kallisto/$branch.sample"
+runKallisto = {
+  output.dir = "transcript/counts/kallisto/$branch.sample"
   def read_para = ""
   if(branch.type == "PE")
   {
-      produce("abundance.txt") {
-        exec "$SOFTWARE_PATH.KALLISTO/kallisto quant -i $ANNOTATION_PATH.KALLISTO_INDEX -o $output.dir -b 100 $read_para $branch.original_merge_read1 $branch.original_merge_read2 >$output.dir/kallisto.log 2>&1", "run_kallisto"
-    }
+    read_para = "$branch.R1_transcript_read $branch.R2_transcript_read"
+  }
+  else
+  {
+    read_para = "--single -l 250 $branch.R1_transcript_read"
+  }
+  produce("abundance.txt") {
+    exec "$SOFTWARE_PATH.KALLISTO/kallisto quant -i $ANNOTATION_PATH.KALLISTO_INDEX -o $output.dir -b 100 $read_para >$output.dir/kallisto_${branch.sample}.blog 2>&1", "run_kallisto"
+  }
+}
+
+runRsem = {
+  output.dir = "transcript/counts/rsem/$branch.sample"
+  def read_para = ""
+  if(branch.type == "PE")
+  {
+    read_para = "--paired-end $branch.R1_transcript_read $branch.R2_transcript_read"
+  }
+  else
+  {
+    read_para = "$branch.R1_transcript_read"
+  }
+  if(flag_trim_read)
+  {
+    read_para += " --gzipped-read-file"
+  }
+  produce(branch.sample + "_RSEM.transcript.bam", branch.sample + "_RSEM.genome.bam", branch.sample + "_RSEM.isoforms.results", branch.sample + "_RSEM.genes.results") {
+    exec "$SOFTWARE_PATH.RSEM/rsem-calculate-expression -p 8 --star --star-path $SOFTWARE_PATH.STAR --estimate-rspd --append-names --output-genome-bam $read_para $ANNOTATION_PATH.RSEM_DB $output1.bam.prefix.prefix >$output.dir/rsem_${branch.sample}.blog 2>&1", "run_rsem"
+  }
+}
+
+runRsemPlot = {
+  output.dir = "metrics/RSEM"
+  produce(pre + "_" + branch.sample + "_RSEM.pdf") {
+    exec "$SOFTWARE_PATH.RSEM/rsem-plot-model $input1.bam.prefix.prefix $output.pdf >$output.dir/rsem_plot_${branch.sample}.blog 2>&1", "run_rsem_plot"
   }
 }
 
 
 countMatrixHtseq = {
-  output.dir = "counts_gene"
+  if(current_aligner == "star"){
+    output.dir = "gene/counts_gene/"
+  }
+  else if(current_aligner == "tophat"){
+    output.dir = "gene/counts_gene/tophat2"
+  }
+  else
+  {
+    fail "ERROR: unrecognized aligner parameter"
+  }
   produce(pre + "_htseq_all_samples.txt") {
-    exec "$SOFTWARE_PATH.PYTHON/python $Bin/rnaseq_count_matrix.py $output.dir .htseq_count $output.txt $ANNOTATION_PATH.geneNameConversion >${output.txt}.log 2>&1", "count_matrix_htseq"
+    exec "$SOFTWARE_PATH.PYTHON/python $Bin/rnaseq_count_matrix.py $output.dir .htseq_count $output.txt $ANNOTATION_PATH.geneNameConversion >$output.dir/count_matrix_htseq_${current_aligner}.blog 2>&1", "count_matrix_htseq"
   }
 }
 
 
 countMatrixDexseq = {
-  output.dir = "counts_exon"
+  if(current_aligner == "star"){
+    output.dir = "exon/counts_exon/"
+  }
+  else if(current_aligner == "tophat"){
+    output.dir = "exon/counts_exon/tophat2"
+  }
+  else
+  {
+    fail "ERROR: unrecognized aligner parameter"
+  }
   produce(pre + "_dexseq_all_samples.txt") {
-    exec "$SOFTWARE_PATH.PYTHON/python $Bin/rnaseq_count_matrix.py $output.dir .dexseq_count $output.txt $ANNOTATION_PATH.geneNameConversion >${output.txt}.log 2>&1", "count_matrix_dexseq"
+    exec "$SOFTWARE_PATH.PYTHON/python $Bin/rnaseq_count_matrix.py $output.dir .dexseq_count $output.txt $ANNOTATION_PATH.geneNameConversion >$output.dir/count_matrix_dexseq_${current_aligner}.blog 2>&1", "count_matrix_dexseq"
   }
 } 
 
 
+countMatrixKallisto = {
+  output.dir = "transcript/counts/kallisto/"
+  produce(pre + "_kallisto_all_genes.txt") {
+    exec "$SOFTWARE_PATH.PYTHON/python $Bin/mergeKallistoAbundance.py $output.dir abundance.txt $output.txt >$output.dir/count_matrix_kallisto.blog 2>&1", "count_matrix_kallisto"
+  }
+}
+
+
+countMatrixRsem = {
+  output.dir = "transcript/counts/rsem/"
+  produce(pre + "_rsem_all_genes.txt") {
+    exec "$SOFTWARE_PATH.PYTHON/python $Bin/mergeRSEMcounts.py $output.dir isoforms.results $output.txt >$output.dir/count_matrix_rsem.blog 2>&1", "count_matrix_rsem"
+  }
+}
+
+
 mergeAlignmentSummary = {
-  output.dir = "metrics"
+  if(current_aligner == "star"){
+    branch.asm_output = star_asm_output
+    output.dir = "metrics"
+  }
+  else if(current_aligner == "tophat"){
+    branch.asm_output = tophat_asm_output
+    output.dir = "metrics/tophat2"
+  }
+  else
+  {
+    fail "ERROR: unrecognized aligner parameter"
+  }
   produce(pre + "_AlignmentSummaryMetrics.txt") {
-    exec "$SOFTWARE_PATH.PERL/perl $Bin/mergePicardMetrics.pl $sample_asm_output >$output.txt 2>${output.txt}.log", "merge_alignment_summary"
+    exec "$SOFTWARE_PATH.PERL/perl $Bin/mergePicardMetrics.pl $branch.asm_output >$output.txt 2>$output.dir/merge_alignment_summary_${current_aligner}.blog", "merge_alignment_summary"
   } 
 
 }
 
 
 mergeRNAseqMetrics = {
+  if(current_aligner == "star"){
+    branch.crm_output = star_crm_output
     output.dir = "metrics"
-    produce(pre + "_CollectRnaSeqMetrics.txt") {
-    exec "$SOFTWARE_PATH.PERL/perl $Bin/mergePicardMetrics.pl $sample_crm_output >$output.txt 2>${output.txt}.log", "merge_rnaseq_metrics"
+  }
+  else if(current_aligner == "tophat"){
+    branch.crm_output = tophat_crm_output
+    output.dir = "metrics/tophat2"
+  }
+  else
+  {
+    fail "ERROR: unrecognized aligner parameter"
+  }
+  produce(pre + "_CollectRnaSeqMetrics.txt") {
+    exec "$SOFTWARE_PATH.PERL/perl $Bin/mergePicardMetrics.pl $branch.crm_output >$output.txt 2>$output.dir/merge_rnaseq_metrics_${current_aligner}.blog", "merge_rnaseq_metrics"
   }
 }
 
 
 mergeCutadaptMetrics = {
+  def root_dir = output.dir
   output.dir = "metrics"
   produce(pre + "_CutAdaptStats.txt") {
-    exec "$SOFTWARE_PATH.PYTHON/python $Bin/mergeCutAdaptStats.py ./intFiles/ '*CUTADAPT_STATS.txt' $output.txt >${output.txt}.log 2>&1", "merge_cutadapt_metrics"
+    exec "$SOFTWARE_PATH.PYTHON/python $Bin/mergeCutAdaptStats.py $root_dir/intFiles/ '*CUTADAPT_STATS.txt' $output.txt >$output.dir/merge_cutadapt_metrics.blog 2>&1", "merge_cutadapt_metrics"
   }
 }
 
 
-runDeseq = {
+runDeseqStar = {
+  output.dir = "gene"
   def root_dir = output.dir
-  output.dir = "gsa"
-  output.dir = "differentialExpression_gene"
-  output.dir = "clustering"
+  output.dir = "gene/gsa"
+  output.dir = "gene/differentialExpression_gene"
+  output.dir = "gene/clustering"
   produce("MDS_plot.pdf", "counts_DESeqscaled_clust.pdf"){
   def extra_para = "";
   if(flag_deseq)
@@ -568,26 +731,107 @@ runDeseq = {
   {
     extra_para += " -clusterOnly"
   }
-  exec "$SOFTWARE_PATH.PERL/perl $Bin/run_DESeq_wrapper.pl -cluster_out $output.dir -config $SOFTWARE_CONFIG_FILE -bin $Bin -counts $root_dir/counts_gene/${pre}_htseq_all_samples.txt $extra_para >$output.dir/deseq.log 2>&1", "run_deseq"
+  exec "$SOFTWARE_PATH.PERL/perl $Bin/run_DESeq_wrapper.pl -cluster_out $output.dir -config $SOFTWARE_CONFIG_FILE -bin $Bin -counts $root_dir/counts_gene/${pre}_htseq_all_samples.txt $extra_para >$output.dir/deseq_star.blog 2>&1", "run_deseq_star"
   }
 }
+
+runDeseqTophat = {
+  output.dir = "gene"
+  def root_dir = output.dir
+  output.dir = "gene/gsa/tophat2"
+  output.dir = "gene/differentialExpression_gene/tophat2"
+  output.dir = "gene/clustering/tophat2"
+  produce("MDS_plot.pdf", "counts_DESeqscaled_clust.pdf"){
+  def extra_para = "";
+  if(flag_deseq)
+  {
+    extra_para += "-pre $pre -diff_out $root_dir/differentialExpression_gene/tophat2 -count_out $root_dir/counts_gene/tophat2 -gsa_out $root_dir/gsa/tophat2 -species $species -samplekey $KEY_FILE -comparisons $COMPARISON_FILE"
+    if(flag_aligner == "star" && flag_no_replicates)
+    {
+      extra_para += " -no_replicates"
+    }
+  }
+  else
+  {
+    extra_para += " -clusterOnly"
+  }
+  exec "$SOFTWARE_PATH.PERL/perl $Bin/run_DESeq_wrapper.pl -cluster_out $output.dir -config $SOFTWARE_CONFIG_FILE -bin $Bin -counts $root_dir/counts_gene/tophat2/${pre}_htseq_all_samples.txt $extra_para >$output.dir/deseq_tophat.blog 2>&1", "run_deseq_tophat"
+  }
+}
+
+runDeseqKallisto = {
+  output.dir = "transcript"
+  def root_dir = output.dir
+  output.dir = "transcript/differentialExpression_trans/kallisto"
+  output.dir = "transcript/counts/kallisto"
+  output.dir = "transcript/clustering/kallisto"
+  produce("MDS_plot.pdf", "counts_DESeqscaled_clust.pdf"){
+  def extra_para = "";
+  if(flag_deseq)
+  {
+    extra_para = "-pre $pre -diff_out $root_dir/differentialExpression_trans/kallisto -species $species -counts $root_dir/counts/kallisto/${pre}_kallisto_all_genes.txt -samplekey $KEY_FILE -comparisons $COMPARISON_FILE"
+  }
+  else
+  {
+    extra_para = "-counts $root_dir/counts/kallisto/${pre}_merged_kallisto_counts.txt -clusterOnly"
+  }
+  exec "$SOFTWARE_PATH.PERL/perl $Bin/run_DESeq_wrapper.pl -count_out $root_dir/counts/kallisto -cluster_out $root_dir/clustering/kallisto -config $SOFTWARE_CONFIG_FILE -bin $Bin $extra_para >$output.dir/deseq_kallisto.blog 2>&1", "run_deseq_kallisto"
+  }
+}
+
+
+runDeseqRsem = {
+  output.dir = "transcript"
+  def root_dir = output.dir
+  output.dir = "transcript/differentialExpression_trans/rsem"
+  output.dir = "transcript/counts/rsem"
+  output.dir = "transcript/clustering/rsem"
+  produce("MDS_plot.pdf", "counts_DESeqscaled_clust.pdf"){
+  def extra_para = "";
+  if(flag_deseq)
+  {
+    extra_para = "-pre $pre -diff_out $root_dir/differentialExpression_trans/rsem -species $species -counts $root_dir/counts/rsem/${pre}_rsem_all_genes.txt -samplekey $KEY_FILE -comparisons $COMPARISON_FILE"
+  }
+  else
+  {
+    extra_para = " -counts $root_dir/counts/rsem/${pre}_merged_rsem_counts.txt -clusterOnly"
+  }
+  exec "$SOFTWARE_PATH.PERL/perl $Bin/run_DESeq_wrapper.pl -count_out $root_dir/counts/rsem -cluster_out $root_dir/clustering/rsem -config $SOFTWARE_CONFIG_FILE -bin $Bin $extra_para >$output.dir/deseq_rsem.blog 2>&1", "run_deseq_rsem"
+  }
+}
+
+
+runCleanup = {
+  def root_dir = output.dir
+  output.dir = "progress"
+  produce("done.txt")
+  {
+    exec "find $root_dir -name \"*.blog\" -type f ! -path \"$root_dir/progress/*\" -exec mv --backup=numbered {} $output.dir \\; >$output.txt", "run_cleanup"
+  }
+}
+
+
+runRsync = {
+  if(rsync_path)
+  {
+    exec "rsync --exclude \"intFiles\" --exclude \"progress\" --exclude \".bpipe\" --exclude \"rnaseq_pipeline.bpipe\" --exclude \"bpipe.config\" --exclude \"bpipe\" --exclude \"commandlog.txt\" -azvP $output.dir/ $rsync_path/$pre >$rsync_path/${pre}_rsync_log.txt", "run_rsync"
+  }
+}
+
+
+
 
 
 skippedProcess = {}
 
 
-
-
-
-
-
-
 //// the following code construct the pipeline work flow ////
 
 
-//// read processing work flow ////
+
+
 def readProcessingWorkflow = prepareRead                     
-if(flag_trim_read || flag_detectfusion){
+if(flag_trim_read || flag_transcript || flag_detectfusion){
   readProcessingWorkflow = segment { readProcessingWorkflow + mergeRead }
 }
 if(flag_trim_read){
@@ -595,41 +839,53 @@ if(flag_trim_read){
 }
 
 
-//// alignment work flow ////
-def alignmentWorkflow
-if(flag_aligner=="tophat"){
-  alignmentWorkflow = segment {runTopHat + reorderSam}
-}
-else if(flag_aligner=="star"){
-  alignmentWorkflow = runStar1P
-  if(flag_star_2p)
+
+def starWorkFlow = skippedProcess
+if(flag_star)
+{
+  starWorkFlow = runStar1P
+  if(!flag_star_1p)
   {
-    alignmentWorkflow = segment {alignmentWorkflow + runStar2PGG + runStar2P}
+    starWorkFlow = segment {starWorkFlow + runStar2PGG + runStar2P}
   }
-  alignmentWorkflow = segment {alignmentWorkflow + runStarProcessing + addGroup}
+  starWorkFlow = segment {starWorkFlow + runStarProcessing}
+  def starMetricsWorkFlow = segment {addGroup + 
+                                    [flag_cufflinks ? runCufflinks.using(current_aligner:"star") : skippedProcess,
+                                     collectRNAseqMetrics.using(current_aligner:"star"), 
+                                     collectAlignmentSummaryMetrics.using(current_aligner:"star")]}
+  def starAnalysisWorkFlow = skippedProcess
+  if(flag_htseq || flag_dexseq)
+  {
+    starAnalysisWorkFlow = segment {sortSamQueryName.using(current_aligner:"star") +
+                                    [flag_htseq ? runHtseq.using(current_aligner:"star") : skippedProcess, 
+                                     flag_dexseq ? runDexseq.using(current_aligner:"star") : skippedProcess] }
+  }
+  starWorkFlow = segment {starWorkFlow + [starMetricsWorkFlow, starAnalysisWorkFlow]}
 }
-else{
-	err.println "ERROR: Unrecognized aligner specified"
-	System.exit(1)
+
+
+
+def tophatWorkFlow = skippedProcess
+if(flag_tophat)
+{
+  tophatWorkFlow = runTopHat
+  def tophatMetricsWorkFlow = segment {reorderSam + 
+                                      [flag_cufflinks ? runCufflinks.using(current_aligner:"tophat") : skippedProcess,
+                                      collectRNAseqMetrics.using(current_aligner:"tophat"), 
+                                      collectAlignmentSummaryMetrics.using(current_aligner:"tophat")]
+  }
+  def tophatAnalysisWorkFlow = skippedProcess
+  if(flag_htseq || flag_dexseq)
+  {
+    tophatAnalysisWorkFlow = segment {sortSamQueryName.using(current_aligner:"tophat") +
+                                    [flag_htseq ? runHtseq.using(current_aligner:"tophat") : skippedProcess, 
+                                     flag_dexseq ? runDexseq.using(current_aligner:"tophat") : skippedProcess] }
+  }
+  tophatWorkFlow = segment {tophatWorkFlow + [tophatMetricsWorkFlow, tophatAnalysisWorkFlow]}
 }
 
 
-//// analysis work flow ////
-def seqAnalysisWorkflow = segment {((flag_htseq || flag_dexseq) ? sortSamQueryName : skippedProcess) +
-                                  [flag_htseq ? runHtseq : skippedProcess, 
-                                   flag_dexseq ? runDexseq : skippedProcess] }
 
-
-
-//// cufflinks work flow ////
-def cufflinksWorkflow = flag_cufflinks ? runCufflinks : skippedProcess
-
-
-//// metrics work flow ////
-def metricsWorkflow = [collectRNAseqMetrics, collectAlignmentSummaryMetrics]
-
-
-//// fusion work flow ////
 def fusionWorkFlow = skippedProcess
 if(flag_detectfusion)
 {
@@ -642,26 +898,62 @@ if(flag_detectfusion)
 }
 
 
-//// transcript work flow ////
+
 def transcriptWorkFlow = skippedProcess
-if(flag_transcript)
+if(flag_kallisto || flag_rsem || flag_express)
 {
-    transcriptWorkFlow = segment{runBowtie2 + runExpress + runKallisto}
+    transcriptWorkFlow = [flag_kallisto ? runKallisto : skippedProcess,
+                          flag_rsem ? segment { runRsem + runRsemPlot } : skippedProcess,
+                          flag_express ? segment {runBowtie2 + runExpress} : skippedProcess]
 }
 
 
-//// collect metrics work flow ////
-def collectMetricsWorkFlow
-collectMetricsWorkFlow = [flag_htseq ? countMatrixHtseq : skippedProcess,
-                          flag_dexseq ? countMatrixDexseq : skippedProcess,
-                          mergeAlignmentSummary,
-                          mergeRNAseqMetrics,
-                          flag_trim_read ? mergeCutadaptMetrics : skippedProcess]
-collectMetricsWorkFlow = segment { collectMetricsWorkFlow + runDeseq }
 
+def collectTrimReadMetricsWorkFlow = skippedProcess
+if(flag_trim_read)
+{
+  collectTrimReadMetricsWorkFlow = mergeCutadaptMetrics
+}
+
+
+
+def collectStarMetricsWorkFlow = skippedProcess
+if(flag_star)
+{  // using() can only be used in run{} or segment{}
+  collectStarMetricsWorkFlow = segment{[flag_htseq ? countMatrixHtseq.using(current_aligner:"star")  : skippedProcess,
+                                        flag_dexseq ? countMatrixDexseq.using(current_aligner:"star")  : skippedProcess,
+                                        mergeAlignmentSummary.using(current_aligner:"star"),
+                                        mergeRNAseqMetrics.using(current_aligner:"star")]}
+  collectStarMetricsWorkFlow = segment { collectStarMetricsWorkFlow + runDeseqStar }
+}
+
+
+
+
+def collectTophatMetricsWorkFlow = skippedProcess
+if(flag_tophat)
+{  // using() can only be used in run{} or segment{}
+  collectTophatMetricsWorkFlow = segment{[flag_htseq ? countMatrixHtseq.using(current_aligner:"tophat")  : skippedProcess,
+                                  flag_dexseq ? countMatrixDexseq.using(current_aligner:"tophat")  : skippedProcess,
+                                  mergeAlignmentSummary.using(current_aligner:"tophat"),
+                                  mergeRNAseqMetrics.using(current_aligner:"tophat")]}
+  collectTophatMetricsWorkFlow = segment { collectTophatMetricsWorkFlow + runDeseqTophat }
+}
+
+
+
+def collectTranscriptMetricsWorkFlow = skippedProcess
+if(flag_kallisto || flag_rsem)
+{
+  collectTranscriptMetricsWorkFlow = [flag_kallisto ? countMatrixKallisto : skippedProcess,
+                                      flag_rsem ? countMatrixRsem : skippedProcess]
+  collectTranscriptMetricsWorkFlow = segment { collectTranscriptMetricsWorkFlow + [flag_kallisto ? runDeseqKallisto : skippedProcess, flag_rsem ? runDeseqRsem : skippedProcess] }
+}
 
 
 
 run {
-   loadSoftwareConfig + loadAnnotationConfig + parseMappingFile + sample_libs_run_path * [ linkRead ] + sample_internal_path * [ readProcessingWorkflow + alignmentWorkflow + [ seqAnalysisWorkflow, cufflinksWorkflow, metricsWorkflow, fusionWorkFlow, transcriptWorkFlow] ] + collectMetricsWorkFlow 
+
+  loadSoftwareConfig + loadAnnotationConfig + parseMappingFile + sample_libs_run_path * [ linkRead ] + sample_internal_path * [ readProcessingWorkflow + [ starWorkFlow, tophatWorkFlow, transcriptWorkFlow, fusionWorkFlow ] ] + [ collectTrimReadMetricsWorkFlow, collectStarMetricsWorkFlow, collectTophatMetricsWorkFlow, collectTranscriptMetricsWorkFlow ] + runCleanup + runRsync
+
 }

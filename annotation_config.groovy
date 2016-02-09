@@ -18,6 +18,7 @@ environments {
 	starDB = "/ifs/depot/assemblies/H.sapiens/hg19/index/star/2.4.1d/gencode/v18/overhang74"
 	starDB_LNCRNA = "/ifs/depot/assemblies/H.sapiens/hg19/index/star/2.3.0e_r291/LNCipedia"
 	starDB_adaptor = "/ifs/depot/assemblies/H.sapiens/hg19/index/star/2.4.1d/gencode/v18/overhang49"
+    RSEM_DB = "/opt/common/CentOS_6/rsem/RSEM-1.2.25/data/hg19/star/hg19_v19_gencode"
   }
 
  mm10 {
@@ -36,6 +37,7 @@ environments {
     KALLISTO_INDEX = ""
 	starDB = "/ifs/depot/assemblies/M.musculus/mm10/index/star/2.4.1d/ensembl/v80/overhang74"
 	starDB_adaptor= "/ifs/depot/assemblies/M.musculus/mm10/index/star/2.4.1d/ensembl/v80/overhang49"
+    RSEM_DB = "/opt/common/CentOS_6/rsem/RSEM-1.2.25/data/GRCm38/star/GRCm38_vM8_gencode"
   }
 
  mm9 {
@@ -54,6 +56,7 @@ environments {
     KALLISTO_INDEX = ""
 	starDB = "/ifs/depot/assemblies/M.musculus/mm9/index/star/2.4.1d/ensembl/v67/overhang74"
 	starDB_adaptor = "/ifs/depot/assemblies/M.musculus/mm9/index/star/2.4.1d/ensembl/v67/overhang49"
+    RSEM_DB = "/opt/common/CentOS_6/rsem/RSEM-1.2.25/data/mm9/star/mm9_vm1_gencode"
   }
 
  hybrid {
@@ -65,6 +68,7 @@ environments {
     REF_FLAT = "BIN_DIRECTORY_TOBE_SUBSTITUTE/data/refFlat__hg19.txt.gz"
 	starDB = "/ifs/depot/assemblies/hybrids/H.sapiens_M.musculus/hg19_mm10/index/star/2.4.1d/gencode/v18/overhang74"
 	starDB_adaptor = "/ifs/depot/assemblies/hybrids/H.sapiens_M.musculus/hg19_mm10/index/star/2.4.1d/gencode/v18/overhang49"
+    RSEM_DB = "/opt/common/CentOS_6/rsem/RSEM-1.2.25/data/hg19/star/hg19_v19_gencode"
   }
 
  zv9 {
