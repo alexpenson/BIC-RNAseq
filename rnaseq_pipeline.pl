@@ -64,7 +64,7 @@ if(!$map || !$pre || !$species || !$strand || $help){
 	* PRE: output prefix (REQUIRED)
 	* SAMPLEKEY: tab-delimited file listing sampleName in column A and condition in column B (if -deseq, REQUIRED)
 	* COMPARISONS: tab-delimited file listing the conditions to compare in columns A/B (if -deseq, REQUIRED)
-	* R1ADAPTOR/R2ADAPTOR: if provided, will trim adaptor sequences; NOTE: if provided for only one end, will also assign it to the other end
+	* R1ADAPTOR/R2ADAPTOR: if -r1adaptor/-r2adaptor provided, will trim adaptor sequences; NOTE: if provided for only one end, will also assign it to the other end
 	* ALIGNERS SUPPORTED: star (-star), defaults to 2pass method unless (-pass1) is specified; tophat2 (-tophat); if no aligner specifed, will default to STAR
 	* ANALYSES SUPPORTED: cufflinks (-cufflinks); htseq (-htseq); dexseq (-dexseq); deseq (-deseq; must specify samplekey and comparisons)
 	* FUSION DETECTION: supported fusion callers chimerascan (-chimerascan), star_fusion (-star_fusion), mapsplice (-mapsplice), defuse (-defuse), fusioncatcher (-fusioncatcher); -allfusions will run all supported fusion detection programs
@@ -183,11 +183,83 @@ open(SC, "$software_config_file") or die "Can't open software config file $softw
 while(<SC>){
     chomp;
     my @conf = split(/\s+/, $_);
-    if($conf[0] =~ /BPIPE/i){
+    if($conf[0] =~ /bpipe/i){
         if(!-e "$conf[1]/bin/bpipe"){
             die "[ERROR]: Can not find bpipe executable IN $conf[1]/bin/ $!";
         }
         $bpipe_path = $conf[1];
+    }
+    elsif($conf[0] =~ /samtools/i){
+        if(!-e "$conf[1]/samtools"){
+        die "[ERROR]: Can not find samtools IN $conf[1] $!";
+        }
+        my $path_tmp = $ENV{'PATH'};
+        $ENV{'PATH'} = "$conf[1]:$path_tmp";        
+    }
+    elsif($conf[0] =~ /^star$/i){
+        if(!-e "$conf[1]/STAR"){
+        die "[ERROR]: Can not find STAR IN $conf[1] $!";
+        }
+        my $path_tmp = $ENV{'PATH'};
+        $ENV{'PATH'} = "$conf[1]:$path_tmp";        
+    }
+    elsif($conf[0] =~ /star_fusion/i){
+        if(!-e "$conf[1]/STAR-Fusion"){
+        die "[ERROR]: Can not find STAR-Fusion IN $conf[1] $!";
+        }
+        my $path_tmp = $ENV{'PATH'};
+        $ENV{'PATH'} = "$conf[1]:$path_tmp";        
+    }
+    elsif($conf[0] =~ /^bowtie2$/i){
+        ### need bowtie2 in path for tophat to run
+        if(!-e "$conf[1]/bowtie2"){
+        die "[ERROR]: Can not find bowtie2 IN $conf[1] $!";
+        }
+        my $path_tmp = $ENV{'PATH'};
+        $ENV{'PATH'} = "$conf[1]:$path_tmp";
+    }
+    elsif($conf[0] =~ /^bowtie$/i){
+        ### need bowtie in path for chimerascan to run
+        if(!-e "$conf[1]/bowtie"){
+        die "[ERROR]: Can not find bowtie IN $conf[1] $!";
+        }
+        my $path_tmp = $ENV{'PATH'};
+        $ENV{'PATH'} = "$conf[1]:$path_tmp";        
+    }
+    elsif($conf[0] =~ /java/i){
+        if(!-e "$conf[1]/java"){
+        die "[ERROR]: Can not find java IN $conf[1] $!";
+        }
+        my $path_tmp = $ENV{'PATH'};
+        $ENV{'PATH'} = "$conf[1]:$path_tmp";
+    }
+    elsif($conf[0] =~ /perl/i){
+        if(!-e "$conf[1]/perl"){
+        die "[ERROR]: Can not find perl IN $conf[1] $!";
+        }
+        my $path_tmp = $ENV{'PATH'};
+        $ENV{'PATH'} = "$conf[1]:$path_tmp";
+    }
+    elsif($conf[0] =~ /python/i){
+        if(!-e "$conf[1]/python"){
+        die "[ERROR]: Can not find python IN $conf[1] $!";
+        }
+        my $path_tmp = $ENV{'PATH'};
+        $ENV{'PATH'} = "$conf[1]:$path_tmp";
+    }
+    elsif($conf[0] =~ /^r$/i){
+        if(!-e "$conf[1]/R"){
+        die "[ERROR]: Can not find R IN $conf[1] $!";
+        }
+        my $path_tmp = $ENV{'PATH'};
+        $ENV{'PATH'} = "$conf[1]:$path_tmp";
+    }
+    elsif($conf[0] =~ /rsem/i){
+        if(!-e "$conf[1]/rsem-calculate-expression"){
+        die "[ERROR]: Can not find rsem-calculate-expression IN $conf[1] $!";
+        }
+        my $path_tmp = $ENV{'PATH'};
+        $ENV{'PATH'} = "$conf[1]:$path_tmp";
     }
 }
 close SC;
