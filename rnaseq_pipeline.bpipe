@@ -924,7 +924,10 @@ if(flag_star)
                                         flag_dexseq ? countMatrixDexseq.using(current_aligner:"star")  : skippedProcess,
                                         mergeAlignmentSummary.using(current_aligner:"star"),
                                         mergeRNAseqMetrics.using(current_aligner:"star")]}
-  collectStarMetricsWorkFlow = segment { collectStarMetricsWorkFlow + runDeseqStar }
+  if(flag_htseq)
+  {
+    collectStarMetricsWorkFlow = segment { collectStarMetricsWorkFlow + runDeseqStar }
+  }
 }
 
 
@@ -937,7 +940,10 @@ if(flag_tophat)
                                   flag_dexseq ? countMatrixDexseq.using(current_aligner:"tophat")  : skippedProcess,
                                   mergeAlignmentSummary.using(current_aligner:"tophat"),
                                   mergeRNAseqMetrics.using(current_aligner:"tophat")]}
-  collectTophatMetricsWorkFlow = segment { collectTophatMetricsWorkFlow + runDeseqTophat }
+  if(flag_htseq)
+  {
+    collectTophatMetricsWorkFlow = segment { collectTophatMetricsWorkFlow + runDeseqTophat }
+  }
 }
 
 
