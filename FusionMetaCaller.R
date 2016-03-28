@@ -2,6 +2,13 @@
 library(data.table)
 library(FusionMetaCaller)
 
+### ./FusionMetaCaller.R merged.txt merged.annotated.txt
+###
+### This script applies FusionMetaCaller ranking to fusions,
+### after ignoring STAR results and
+### grouping both by breakpoint and by gene pair.
+### It adds columns and writes an annotated file.
+
 annotate_merged_file <- function(merged,
                                  TAG_name = "TAG_breakpoints",
                                  FusionMetaCaller_rank_name = "FusionMetaCaller_rank_breakpoints"){
