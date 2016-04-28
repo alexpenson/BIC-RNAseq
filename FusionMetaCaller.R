@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 library(data.table)
-library(FusionMetaCaller)
+## library(FusionMetaCaller)
 
 ### ./FusionMetaCaller.R merged.txt merged.annotated.txt
 ###
@@ -100,7 +100,7 @@ annotate_merged_file <- function(merged,
   rownames(merged_m) <- merged_dc[[1]]
   rm(merged_dc)
 
-  fusions <- rownames(FusionMetaCaller::FusionMetaCaller(merged_m)[["sortMatrix"]])
+  fusions <- rownames(FusionMetaCaller(merged_m)[["sortMatrix"]])
 
   merged[, FusionMetaCaller_rank_name := match(get(TAG_name), fusions), with = F]
 
