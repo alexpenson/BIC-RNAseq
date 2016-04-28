@@ -24,7 +24,12 @@ FusionMetaCaller <- function (countMatrix, vote = 2, plot = F, trueFusion = NA){
   }
   rankSum <- apply(orderMatrix, 1, sum)
   orderOfRankSum <- order(-rankSum)
-  sortMatrix <- filterMatrix[orderOfRankSum, ]
+  if(sum(filterInd) == 1){
+    sortMatrix <- t(as.matrix(filterMatrix[orderOfRankSum, ]))
+    rownames(sortMatrix) <- rownames(filterMatrix)[orderOfRankSum]
+  } else {
+    sortMatrix <- filterMatrix[orderOfRankSum, ]
+  }
   if (plot == T) {
     co <- 2
     colLabel <- c("red", "blue", "green", "yellow", "purple",
@@ -117,7 +122,7 @@ if(!interactive()){
   args <- commandArgs(TRUE)
   filename <- args[[1]]; args <- args[-1]
   ### /ifs/e63data/schultzlab/wangq/rna-seq-normal/fusion/bladder/fusion/Proj_GTEX_Bladder_merged_fusions_s_SRR1071717.txt
-  outputfilename <- args[[1]]; args <- args[-1]
+  output_filename <- args[[1]]; args <- args[-1]
 
   ### load file
   merged <- suppressWarnings(fread(filename))
